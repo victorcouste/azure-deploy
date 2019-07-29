@@ -2,12 +2,6 @@
   "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "clusterName": {
-      "type": "string",
-      "metadata": {
-        "description": "Name of the existing HDInsight cluster to be used"
-      }
-    },
     "galleryPackageIdentity": {
       "type": "string",
       "metadata": {
@@ -16,10 +10,10 @@
       },
       "defaultValue": "wrangler-enterprise"
     },
-    "edgeNodeSize": {
+    "TrifactaServerSize": {
       "type": "string",
       "metadata": {
-        "description": "Virtual machine type for the Trifacta edge node",
+        "description": "Virtual machine type for the Trifacta server",
         "trifactaComment": "Do not change this key."
       },
       "defaultValue": "Standard_D13_V2",
@@ -47,7 +41,7 @@
     "applicationName": {
       "type": "string",
       "metadata": {
-        "description": "Unique (per-cluster) application name for the Trifacta edge node",
+        "description": "Unique application name for the Trifacta instance",
         "trifactaComment": "Do not change this key."
       },
       "defaultValue": "trifacta"
@@ -94,12 +88,27 @@
         "description": "Shared Access Signature token. Required for Blob Storage access."
       },
       "defaultValue": "<WASB_SAS_TOKEN>"
+    },
+    "Databricks_URL": {
+      "type": "string",
+      "metadata": {
+        "description": "Databricks Service URL. Required for Spark processing in Databricks cluster."
+      },
+      "defaultValue": "<DATABRICKS_URL>"
+    },
+    "ADLS Store": {
+      "type": "string",
+      "metadata": {
+        "description": "Aazure ADLS store name."
+      },
+      "defaultValue": "<ADLS_STORE>"
     }
+
   },
   "variables": {
     "trifactaVersionShort": "[replace(parameters('trifactaVersion'), '.', '')]",
     "branch": "master",
-    "baseUri": "[concat('https://raw.githubusercontent.com/trifacta/azure-deploy/', variables('branch'))]",
+    "baseUri": "[concat('https://raw.githubusercontent.com/victorcouste/azure-deploy/', variables('branch'))]",
     "armTemplateVersion": "1",
     "trifactaDownloadAccessSignature": "sr=c&si=trifacta-deploy-public-read&sig=ksMPhDkLpJYPEXnRNp4vAdo6QQ9ulpP%2BM4Gsi/nea%2Bg%3D&sv=2016-05-31"
   },
@@ -118,29 +127,15 @@
       }
     },
     {
-      "name": "[concat(parameters('clusterName'), '/', parameters('applicationName'))]",
-      "type": "Microsoft.HDInsight/clusters/applications",
-      "apiVersion": "2015-03-01-preview",
-      "dependsOn": [],
+      "name": "[parameters('applicationName')]",
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2019-03-01",
       "properties": {
-        "marketPlaceIdentifier": "[parameters('galleryPackageIdentity')]",
-        "computeProfile": {
-          "roles": [
-            {
-              "name": "edgenode",
-              "targetInstanceCount": 1,
-              "hardwareProfile": {
-                "vmSize": "[parameters('edgeNodeSize')]"
-              }
-            }
-          ]
-        },
         "installScriptActions": [
           {
             "name": "[concat('trifacta-', variables('trifactaVersionShort'), '-', variables('armTemplateVersion'), '-', uniquestring(parameters('applicationName')))]",
             "uri": "[concat(variables('baseUri'), '/bin/deploy.sh')]",
-            "parameters": "[concat('-v \"', parameters('trifactaVersion'), '\" -B \"', variables('branch'), '\" -s \"', variables('trifactaDownloadAccessSignature'), '\" -d \"', parameters('DirectoryID'), '\" -a \"', parameters('ApplicationID'), '\" -S \"', parameters('Secret'), '\" -K \"', parameters('KeyVaultUrl'), '\" -t \"', parameters('SasToken'), '\"')]",
-            "roles": ["edgenode"]
+            "parameters": "[concat('-v \"', parameters('trifactaVersion'), '\" -B \"', variables('branch'), '\" -s \"', variables('trifactaDownloadAccessSignature'), '\" -d \"', parameters('DirectoryID'), '\" -a \"', parameters('ApplicationID'), '\" -S \"', parameters('Secret'), '\" -K \"', parameters('KeyVaultUrl'), '\" -t \"', parameters('SasToken'), '\" -da \"', parameters('Databricks_URL'), '\"')]"
           }
         ],
         "uninstallScriptActions": [
@@ -165,7 +160,7 @@
   "outputs": {
     "application": {
       "type": "object",
-      "value": "[reference(resourceId('Microsoft.HDInsight/clusters/applications/', parameters('clusterName'), parameters('applicationName')))]"
+      "value": "[reference(resourceId(parameters('applicationName')))]"
     }
   }
 }

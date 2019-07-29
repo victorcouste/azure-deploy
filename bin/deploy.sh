@@ -9,6 +9,9 @@ application_id="APPLICATION_ID"
 secret="APPLICATION_SECRET"
 wasb_sas_token="WASB_SAS_TOKEN"
 key_vault_url="KEY_VAULT_URL"
+databricks_url="KEY_VAULT_URL"
+adls_store="ADLS_STORE"
+
 
 tmpdir="/tmp/trifacta-deploy"
 
@@ -34,6 +37,8 @@ Options:
   -S <secret>    Registered application\'s key. Required. [default: $secret]
   -t <wasb sas token> Shared Access Signature token for WASB access. Required when storage is WASB.
   -K <key vault URL> Azure Key Vault URL. Required when storage is ADLS.
+  -da <Databricks URL> Databricks Service URL.
+  -adls <ALDS Store> ADLS Store name.
   -h             This message
 EOF
 }
@@ -53,6 +58,8 @@ while getopts "v:b:B:s:d:a:S:t:K:h" opt; do
     S  ) secret=$OPTARG ;;
     t  ) wasb_sas_token=$OPTARG ;;
     K  ) key_vault_url=$OPTARG ;;
+    da ) databricks_url=$OPTARG ;;
+    adls  ) adls_store=$OPTARG ;;
     h  ) Usage && exit 0 ;;
     \? ) LogError "Invalid option: -$OPTARG" ;;
     :  ) LogError "Option -$OPTARG requires an argument." ;;
@@ -84,7 +91,15 @@ if [[ -z ${secret+x} ]]; then
   LogError "Application Secret must be specified (via -S option)"
 fi
 
-base_uri="https://raw.githubusercontent.com/trifacta/azure-deploy/$branch"
+if [[ -z ${databricks_url+x} ]]; then
+  LogError "Databricks service URL (via -da option)"
+fi
+
+if [[ -z ${adls_store+x} ]]; then
+  LogError "ADLS store name (via -adls option)"
+fi
+
+base_uri="https://raw.githubusercontent.com/victorcouste/azure-deploy/$branch"
 bindir_uri="$base_uri/bin"
 
 function RunScript() {
@@ -116,6 +131,8 @@ LogInfo "Base URI            : $base_uri"
 LogInfo "Bindir URI          : $bindir_uri"
 LogInfo "AAD directory ID    : $directory_id"
 LogInfo "AAD application ID  : $application_id"
+LogInfo "ADLS Store name     : $adls_store"
+LogInfo "Databricks URL      : $databricks_url"
 LogInfo "============================================================"
 
 DeleteExistingDirectory "$tmpdir"
@@ -131,6 +148,6 @@ done
 RunScript prepare-edge-node.sh
 RunScript install-app.sh -v "$version" -b "$build" -s "$shared_access_signature"
 RunScript configure-db.sh
-RunScript configure-app.sh -d "$directory_id" -a "$application_id" -S "$secret" -t "$wasb_sas_token" -K "$key_vault_url"
+RunScript configure-app.sh -d "$directory_id" -a "$application_id" -S "$secret" -t "$wasb_sas_token" -K "$key_vault_url" -da "databricks_url" -adls "adls_store"
 
 popd 2>&1 > /dev/null

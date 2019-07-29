@@ -9,6 +9,8 @@ application_id=""
 secret=""
 wasb_sas_token=""
 key_vault_url=""
+databricks_url=""
+adls_store=""
 
 function Usage() {
   cat << EOF
@@ -20,7 +22,8 @@ Options:
   -S <secret>    Registered application\'s key for access to ADLS. Required when storage is ADLS. [default: $secret]
   -t <sas token> Shared Access Signature token. Required when storage is WASB.
   -K <key vault URL> Azure Key Vault URL. Required when storage is ADLS.
-  -h             This message.
+  -da <Databricks URL> Databricks Service URL. Required to run Spark job in Databricks cluster.
+  -adls <ADLS Store> ADLS Store name. Required when storage is ADLS.
 EOF
 }
 
@@ -31,6 +34,8 @@ while getopts "u:d:a:S:t:K:h" opt; do
     S  ) secret=$OPTARG ;;
     t  ) wasb_sas_token=$OPTARG ;;
     K  ) key_vault_url=$OPTARG ;;
+    da ) databricks_url=$OPTARG ;;
+    adls ) adls_store=$OPTARG ;;
     h  ) Usage && exit 0 ;;
     \? ) LogError "Invalid option: -$OPTARG" ;;
     :  ) LogError "Option -$OPTARG requires an argument." ;;
@@ -43,20 +48,6 @@ create_db_roles_script="$trifacta_basedir/bin/setup-utils/db/trifacta-create-pos
 
 trifacta_user="trifacta"
 
-hadoop_conf_dir="/usr/hdp/current/hadoop-client/conf"
-core_site="$hadoop_conf_dir/core-site.xml"
-hdfs_site="$hadoop_conf_dir/hdfs-site.xml"
-yarn_site="$hadoop_conf_dir/yarn-site.xml"
-
-function FullHDPVersion() {
-  echo $(basename `ls -d /usr/hdp/* | grep -P '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+-[0-9]+'`)
-}
-
-function ShortHDPVersion() {
-  local full_version=$(FullHDPVersion)
-  echo "$full_version" | cut -d. -f-2
-}
-
 function CreateCustomerKey() {
   local keyfile="$trifacta_basedir/conf/.key/customerKey"
   if [[ -f "$keyfile" ]]; then
@@ -68,28 +59,6 @@ function CreateCustomerKey() {
   fi
 }
 
-function CreateHdfsDirectories() {
-  # Note, these do not need to be prefixed by the ADLS mount point if ADLS is in use
-  local directories="
-    /user/trifacta
-    /trifacta
-    /trifacta/dictionaries
-    /trifacta/libraries
-    /trifacta/queryResults
-    /trifacta/tempfiles
-    /trifacta/uploads
-    /trifacta/.datasourceCache"
-  for directory in $directories; do
-    hdfs dfs -mkdir -p "$directory"
-  done
-}
-
-function CopyHadoopConfigFiles() {
-  LogInfo "Copying Hadoop configuration files"
-  cp -rp --remove-destination "/usr/hdp/current/hadoop-client/conf/"* "/opt/trifacta/conf/hadoop-site/"
-  cp -rp --remove-destination "/etc/hive/conf/"* "/opt/trifacta/conf/hadoop-site/"
-  ln -sf "/etc/hive/conf/hive-site.xml" "/etc/hadoop/conf/hive-site.xml"
-}
 
 function CheckValueSetOrExit() {
   local name="$1"
@@ -130,19 +99,6 @@ function GetPortFromString() {
   echo "$1" | cut -d: -f2
 }
 
-function GetHadoopProperty() {
-  local property="$1"
-  local config_file="$2"
-  echo $(xmllint --xpath "/configuration/property[name=\"$property\"]/value/text()" "$config_file")
-}
-
-function GetDefaultFS() {
-  echo $(GetHadoopProperty "fs.defaultFS" "$core_site")
-}
-
-function GetDefaultFSType() {
-  GetDefaultFS | cut -d: -f1
-}
 
 function ConfigureSecureTokenService() {
   # Secure Token Service: Refresh Token Encryption Key
@@ -162,6 +118,14 @@ function ConfigureUdfService() {
   jq ".[\"udf-service\"].jvmOptions = [\"$jvm_options\"]" "$triconf" | sponge "$triconf"
 }
 
+function ConfigureAzureDatabricks() {
+  CheckValueSetOrExit "Databricks URL" "$service_url"
+
+  jq ".databricks.serviceUrl = \"$service_url\"" \
+    "$triconf" | sponge "$triconf"
+}
+
+
 function ConfigureAzureCommon() {
   CheckValueSetOrExit "Directory ID" "$directory_id"
   CheckValueSetOrExit "Application ID" "$application_id"
@@ -175,9 +139,9 @@ function ConfigureAzureCommon() {
 }
 
 function ConfigureADLS() {
-  local adls_host=$(GetHadoopProperty "dfs.adls.home.hostname" "$core_site")
+  local adls_host=${adls_store}.azuredatalakestore.net
   local adls_uri="adl://${adls_host}"
-  local adls_prefix=$(GetHadoopProperty "dfs.adls.home.mountpoint" "$core_site")
+  local adls_prefix=""
 
   LogInfo "Configuring ADLS"
   CheckValueSetOrExit "ADLS URI" "$adls_uri"
@@ -187,6 +151,7 @@ function ConfigureADLS() {
     .hdfs.username = \"$trifacta_user\" |
     .hdfs.enabled = true |
     .hdfs.protocolOverride = \"adl\" |
+    .hdfs.highavailability.serviceName = \"$adls_host\" |
     .hdfs.namenode.host = \"$adls_host\" |
     .hdfs.namenode.port = 443 |
     .hdfs.webhdfs.httpfs = false |
@@ -228,182 +193,16 @@ function ConfigureWASB() {
     .azure.wasb.defaultStore.sasToken = \"$wasb_sas_token\"" \
     "$triconf" | sponge "$triconf"
 
-  # Not really sure this is required but it's probably safest to ensure wasbs
-  sed -i 's@wasb://@wasbs://@g' "/opt/trifacta/conf/hadoop-site/core-site.xml"
 }
 
-function ConfigureHDP() {
-  local hdp_full_version=$(FullHDPVersion)
-  local hdp_short_version=$(ShortHDPVersion)
 
-  LogInfo "Configuring HDP"
-  CheckValueSetOrExit "HDP full version" "$hdp_full_version"
-  CheckValueSetOrExit "HDP short version" "$hdp_short_version"
 
-  jq ".hadoopBundleJar = \"hadoop-deps/hdp-${hdp_short_version}/build/libs/hdp-${hdp_short_version}-bundle.jar\" |
-    .[\"batch-job-runner\"].classpath = \"%(topOfTree)s/services/batch-job-runner/build/install/batch-job-runner/batch-job-runner.jar:/usr/hdp/current/hadoop-client/*:%(topOfTree)s/services/batch-job-runner/build/install/batch-job-runner/lib/*:/etc/hadoop/conf:%(topOfTree)s/conf/hadoop-site:/usr/lib/hdinsight-datalake/*:/usr/hdp/current/hadoop-client/client/*:/usr/hdp/current/hadoop-client/lib/*:%(topOfTree)s/%(hadoopBundleJar)s\" |
-    .[\"batch-job-runner\"].env.LD_LIBRARY_PATH = \"%(topOfTree)s/libs/java/joblaunch/fileconverter/tableausdk-linux64/lib64/tableausdk/:/usr/hdp/current/hadoop-client/lib/native:/usr/hdp/current/hadoop-client/lib/native/Linux-amd64-64\" |
-    .[\"batch-job-runner\"].systemProperties[\"java.library.path\"] = \"/usr/hdp/current/hadoop-client/lib/native:/usr/hdp/current/hadoop-client/lib/native/Linux-amd64-64\" |
-    .[\"batchserver\"].spark.requestTimeoutMillis = 120000 |
-    .[\"spark-job-service\"].jvmOptions = [\"-Xmx512m\", \"-Dhdp.version=${hdp_full_version}\"] |
-    .[\"spark-job-service\"].classpath = \"%(topOfTree)s/services/spark-job-server/server/build/libs/spark-job-server-bundle.jar:%(topOfTree)s/%(sparkBundleJar)s:/etc/hadoop/conf:%(topOfTree)s/conf/hadoop-site:/usr/lib/hdinsight-datalake/*:%(topOfTree)s/services/spark-job-server/build/bundle/*:/usr/hdp/current/hadoop-client/client/*:/usr/hdp/current/hadoop-client/*:%(topOfTree)s/%(hadoopBundleJar)s\" |
-    .spark.hadoopUser = \"$trifacta_user\" |
-    .spark.props[\"spark.driver.extraJavaOptions\"] = \"-XX:MaxPermSize=1024m -XX:PermSize=256m -Dhdp.version=${hdp_full_version}\" |
-    .spark.props[\"spark.driver.extraLibraryPath\"] = \"/usr/hdp/current/hadoop-client/lib/native:/usr/hdp/current/hadoop-client/lib/native/Linux-amd64-64\" |
-    .spark.props[\"spark.executor.extraLibraryPath\"] = \"/usr/hdp/current/hadoop-client/lib/native:/usr/hdp/current/hadoop-client/lib/native/Linux-amd64-64\" |
-    .spark.props[\"spark.yarn.am.extraJavaOptions\"] = \"-Dhdp.version=${hdp_full_version}\" |
-    .[\"batch-job-runner\"].autoRestart = true |
-    .[\"data-service\"].autoRestart = true |
-    .[\"ml-service\"].autoRestart = true |
-    .[\"proxy\"].autoRestart = true |
-    .[\"scheduling-service\"].autoRestart = true |
-    .[\"spark-job-service\"].autoRestart = true |
-    .[\"time-based-trigger-service\"].autoRestart = true |
-    .[\"udf-service\"].autoRestart = true |
-    .[\"vfs-service\"].autoRestart = true  |
-    .webapp.autoRestart = true |
-    .env.PATH = \"\${HOME}/bin:$PATH:/usr/local/bin:/usr/lib/zookeeper/bin\" |
-    .env.TRIFACTA_CONF = \"/opt/trifacta/conf\" |
-    .env.JAVA_HOME = \"/usr/lib/jvm/java-1.8.0-openjdk-amd64\"" \
-    "$triconf" | sponge "$triconf"
-}
-
-function ConfigureHAResourceManager() {
-  local enabled=$(GetHadoopProperty "yarn.resourcemanager.ha.enabled" "$yarn_site")
-  if [[ "$enabled" != "true" ]]; then
-    return
-  fi
-
-  # Get the namenode names (assumes single nameservice)
-  local ha_rm_ids=$(GetHadoopProperty "yarn.resourcemanager.ha.rm-ids" "$yarn_site")
-  local rm1_name=$(echo "$ha_rm_ids" | cut -d, -f1)
-  local rm2_name=$(echo "$ha_rm_ids" | cut -d, -f2)
-
-  local ha_rm_ids=$(GetHadoopProperty "yarn.resourcemanager.ha.rm-ids" "$yarn_site")
-
-  rm_active=$(GetHadoopProperty "yarn.resourcemanager.hostname" "$yarn_site")
-  rm_active_host=$(GetHostFromString $rm_active)
-  rm1=$(GetHadoopProperty "yarn.resourcemanager.address.$rm1_name" "$yarn_site")
-  rm2=$(GetHadoopProperty "yarn.resourcemanager.address.$rm2_name" "$yarn_site")
-  rm1_host=$(GetHostFromString $rm1)
-  rm2_host=$(GetHostFromString $rm2)
-  rm1_port=$(GetPortFromString $rm1)
-  rm2_port=$(GetPortFromString $rm2)
-
-  rm1_admin=$(GetHadoopProperty "yarn.resourcemanager.admin.address.$rm1_name" "$yarn_site")
-  rm2_admin=$(GetHadoopProperty "yarn.resourcemanager.admin.address.$rm2_name" "$yarn_site")
-  rm1_admin_port=$(GetPortFromString $rm1_admin)
-  rm2_admin_port=$(GetPortFromString $rm2_admin)
-
-  rm1_webapp=$(GetHadoopProperty "yarn.resourcemanager.webapp.address.$rm1_name" "$yarn_site")
-  rm2_webapp=$(GetHadoopProperty "yarn.resourcemanager.webapp.address.$rm2_name" "$yarn_site")
-  rm1_webapp_port=$(GetPortFromString $rm1_webapp)
-  rm2_webapp_port=$(GetPortFromString $rm2_webapp)
-
-  rm1_scheduler=$(GetHadoopProperty "yarn.resourcemanager.scheduler.address.$rm1_name" "$yarn_site")
-  rm2_scheduler=$(GetHadoopProperty "yarn.resourcemanager.scheduler.address.$rm2_name" "$yarn_site")
-  rm1_scheduler_port=$(GetPortFromString $rm1_scheduler)
-  rm2_scheduler_port=$(GetPortFromString $rm2_scheduler)
-
-  LogInfo "Configuring HA ResourceManager"
-  CheckValueSetOrExit "RM Active" "$rm_active"
-  CheckValueSetOrExit "RM1" "$rm1"
-  CheckValueSetOrExit "RM1 admin port" "$rm1_admin_port"
-  CheckValueSetOrExit "RM1 webapp port" "$rm1_webapp_port"
-  CheckValueSetOrExit "RM1 scheduler port" "$rm1_scheduler_port"
-  CheckValueSetOrExit "RM2" "$rm2"
-  CheckValueSetOrExit "RM2 admin port" "$rm2_admin_port"
-  CheckValueSetOrExit "RM2 webapp port" "$rm2_webapp_port"
-  CheckValueSetOrExit "RM2 scheduler port" "$rm2_scheduler_port"
-
-  jq ".feature.highAvailability.resourceManager = true |
-    .yarn.resourcemanager.host = \"$rm_active_host\" |
-    .yarn.resourcemanager.port = $rm1_port |
-    .yarn.resourcemanager.adminPort = $rm1_admin_port |
-    .yarn.resourcemanager.schedulerPort = $rm1_scheduler_port |
-    .yarn.resourcemanager.webappPort = $rm1_webapp_port |
-    .yarn.highAvailability.resourceManagers.$rm1_name.host = \"$rm1_host\" |
-    .yarn.highAvailability.resourceManagers.$rm1_name.port = $rm1_port |
-    .yarn.highAvailability.resourceManagers.$rm1_name.adminPort = $rm1_admin_port |
-    .yarn.highAvailability.resourceManagers.$rm1_name.schedulerPort = $rm1_scheduler_port |
-    .yarn.highAvailability.resourceManagers.$rm1_name.webappPort = $rm1_webapp_port |
-    .yarn.highAvailability.resourceManagers.$rm2_name.host = \"$rm2_host\" |
-    .yarn.highAvailability.resourceManagers.$rm2_name.port = $rm2_port |
-    .yarn.highAvailability.resourceManagers.$rm2_name.adminPort = $rm2_admin_port |
-    .yarn.highAvailability.resourceManagers.$rm2_name.schedulerPort = $rm2_scheduler_port |
-    .yarn.highAvailability.resourceManagers.$rm2_name.webappPort = $rm2_webapp_port" \
-    "$triconf" | sponge "$triconf"
-}
-
-function ConfigureHANameNode() {
-  local enabled=$(GetHadoopProperty "dfs.ha.automatic-failover.enabled" "$hdfs_site")
-  if [[ "$enabled" != "true" ]]; then
-    return
-  fi
-
-  local fs_type="$1"
-  local service_name=""
-  if [[ "$fs_type" == "adl" ]]; then
-    service_name=$(GetHadoopProperty "dfs.adls.home.hostname" "$core_site")
-  elif [[ "$fs_type" == "wasb" || "$fs_type" == "wasbs" ]]; then
-    service_name=$(GetDefaultFS)
-    service_name=$(echo "$service_name" | grep -Po "[a-z]*://\K.*")
-  fi
-
-  # Get the namenode names (assumes single nameservice)
-  local nameservice=$(GetHadoopProperty "dfs.internal.nameservices" "$hdfs_site")
-  local namenodes=$(GetHadoopProperty "dfs.ha.namenodes.$nameservice" "$hdfs_site")
-  local nn1_name=$(echo "$namenodes" | cut -d, -f1)
-  local nn2_name=$(echo "$namenodes" | cut -d, -f2)
-
-  # Get the namenode addresses and ports
-  local nn1_address=$(GetHadoopProperty "dfs.namenode.rpc-address.$nameservice.$nn1_name" "$hdfs_site")
-  local nn1_host=$(GetHostFromString "$nn1_address")
-  local nn1_port=$(GetPortFromString "$nn1_address")
-  local nn2_address=$(GetHadoopProperty "dfs.namenode.rpc-address.$nameservice.$nn2_name" "$hdfs_site")
-  local nn2_host=$(GetHostFromString "$nn2_address")
-  local nn2_port=$(GetPortFromString "$nn2_address")
-
-  LogInfo "Configuring HA NameNode"
-  CheckValueSetOrExit "Service name" "$service_name"
-  CheckValueSetOrExit "NameService" "$nameservice"
-  CheckValueSetOrExit "NameNodes" "$namenodes"
-  CheckValueSetOrExit "NameNode 1 host" "$nn1_host"
-  CheckValueSetOrExit "NameNode 1 port" "$nn1_port"
-  CheckValueSetOrExit "NameNode 2 host" "$nn2_host"
-  CheckValueSetOrExit "NameNode 2 port" "$nn2_port"
-
-  jq ".feature.highAvailability.namenode = true |
-    .hdfs.highAvailability.serviceName = \"$service_name\" |
-    .hdfs.highAvailability.namenodes.nn1.host = \"$nn1_host\" |
-    .hdfs.highAvailability.namenodes.nn1.port = $nn1_port |
-    .hdfs.highAvailability.namenodes.nn2.host = \"$nn2_host\" |
-    .hdfs.highAvailability.namenodes.nn2.port = $nn2_port" \
-    "$triconf" | sponge "$triconf"
-}
-
-function ConfigureHive() {
-  local hive_enabled=true
-
-  if $hive_enabled; then
-    local hdp_short_version=$(ShortHDPVersion)
-    LogInfo "Configuring Hive"
-    CheckValueSetOrExit "HDP short version" "$hdp_short_version"
-
-    jq ".[\"data-service\"].hiveJdbcJar = \"hadoop-deps/hdp-${hdp_short_version}/build/libs/hdp-${hdp_short_version}-hive-jdbc.jar\" |
-      .[\"spark-job-service\"].enableHiveSupport = true |
-      .[\"spark-job-service\"].hiveDependenciesLocation = \"%(topOfTree)s/hadoop-deps/hdp-${hdp_short_version}/build/libs\"" \
-      "$triconf" | sponge "$triconf"
-  fi
-}
-
-function ConfigureHDI() {
+function ConfigureAzureStorage() {
   LogInfo "Configuring HDI"
 
   fs_type=$(GetDefaultFSType)
   CheckValueSetOrExit "Default FS Type" "$fs_type"
 
-  ConfigureHDP
   if [[ "$fs_type" == "adl" ]]; then
     ConfigureADLS
   elif [[ "$fs_type" == "wasb" || "$fs_type" == "wasbs" ]]; then
@@ -411,9 +210,6 @@ function ConfigureHDI() {
   else
     LogError "Unsupported filesystem (\"$fs_type\"). Exiting."
   fi
-  ConfigureHANameNode "$fs_type"
-  ConfigureHAResourceManager
-  ConfigureHive
 }
 
 function ConfigureEdgeNode() {
@@ -460,37 +256,9 @@ function StartTrifacta() {
   service trifacta restart || true
 }
 
-function CreateHiveConnection() {
-  local connection_file="$script_dir/hive-connection.json"
-  local zk_host_str=$(GetHadoopProperty "hive.zookeeper.quorum" "/etc/hive/conf/hive-site.xml")
-cat > "$connection_file" << EOF
-{
-    "jdbc": "hive2",
-    "defaultDatabase": "default",
-    "connectStrOpts": ";serviceDiscoveryMode=zooKeeper;zooKeeperNamespace=hiveserver2"
-}
-EOF
-
-  LogInfo "Creating Hive connection"
-  $trifacta_basedir/bin/trifacta_cli.py \
-    create_connection \
-    --user_name admin@trifacta.local \
-    --password admin \
-    --conn_name hive \
-    --conn_host "$zk_host_str" \
-    --conn_port 2181 \
-    --conn_credential_type trifacta_service \
-    --conn_type hadoop_hive \
-    --conn_params_location "$connection_file" \
-    --conn_skip_test \
-    --conn_is_global
-}
-
 BackupFile "$triconf"
 
 CreateCustomerKey
-CreateHdfsDirectories
-CopyHadoopConfigFiles
 
 ConfigurePostgres
 CreateDBRoles
@@ -499,7 +267,7 @@ ConfigureEdgeNode
 ConfigureSecureTokenService
 ConfigureUdfService
 ConfigureAzureCommon
-ConfigureHDI
+ConfigureAzureStorage
+ConfigureDatabricks
 
 StartTrifacta
-CreateHiveConnection
