@@ -152,7 +152,7 @@
   "outputs": {
     "application": {
       "type": "object",
-      "value": "[reference(resourceId(parameters('applicationName')))]"
+      "value": "[reference(resourceId('Microsoft.Compute/virtualMachines', parameters('applicationName')))]"
     }
   }
 }
