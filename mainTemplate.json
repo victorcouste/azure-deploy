@@ -137,14 +137,6 @@
             "roles": ["edgenode"]
           }
         ],
-        "httpsEndpoints": [
-          {
-            "subDomainSuffix": "[parameters('subdomainApplicationURISuffix')]",
-            "destinationPort": 3005,
-            "accessModes": ["webpage"],
-            "disableGatewayAuth": true
-          }
-        ],
         "applicationType": "CustomApplication"
       }
     }
