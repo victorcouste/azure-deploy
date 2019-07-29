@@ -46,14 +46,6 @@
       },
       "defaultValue": "trifacta"
     },
-    "subdomainApplicationURISuffix": {
-      "type": "string",
-      "maxLength": 3,
-      "metadata": {
-        "description": "Unique (per cluster) three-character alphanumeric string used in the application's DNS name."
-      },
-      "defaultValue": "tri"
-    },
     "DirectoryID": {
       "type": "string",
       "metadata": {
