@@ -66,8 +66,8 @@
       },
       "defaultValue": "6.0.1",
       "allowedValues": [
-        "6.0.0",
-        "6.0.1"
+        "6.0.1",
+        "6.0.2"
       ]
     },
     "TrifactaApplicationName": {
@@ -77,10 +77,63 @@
         "trifactaComment": "Do not change this key."
       },
       "defaultValue": "trifacta"
+    },
+    "DirectoryID": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure Active Directory directory ID for the registered application. Required."
+      },
+      "defaultValue": "<AAD_DIRECTORY_ID>"
+    },
+    "ApplicationID": {
+      "type": "string",
+      "metadata": {
+        "description": "Registered application's ID. Required."
+      },
+      "defaultValue": "<APPLICATION_ID>"
+    },
+    "Secret": {
+      "type": "secureString",
+      "metadata": {
+        "description": "Registered application's key. Required."
+      },
+      "defaultValue": "<APPLICATION_SECRET>"
+    },
+    "KeyVaultUrl": {
+      "type": "string",
+      "metadata": {
+        "description": "Key Vault URL. Required for Azure Data Lake Store access."
+      },
+      "defaultValue": "https://KEY_VAULT_NAME.vault.azure.net/"
+    },
+    "SasToken": {
+      "type": "string",
+      "metadata": {
+        "description": "Shared Access Signature token. Required for Blob Storage access."
+      },
+      "defaultValue": "<WASB_SAS_TOKEN>"
+    },
+    "Databricks_URL": {
+      "type": "string",
+      "metadata": {
+        "description": "Databricks Service URL. Required for Spark processing in Databricks cluster."
+      },
+      "defaultValue": "https://REGION.azuredatabricks.net"
+    },
+    "ADLS Store": {
+      "type": "string",
+      "metadata": {
+        "description": "Aazure ADLS store name."
+      },
+      "defaultValue": "<ADLS_STORE>"
     }
-
   },
   "variables": {
+    "trifactaVersionShort": "[replace(parameters('TrifactaVersion'), '.', '')]",
+    "branch": "master",
+    "baseUri": "[concat('https://raw.githubusercontent.com/victorcouste/azure-deploy/', variables('branch'))]",
+    "armTemplateVersion": "1",
+    "trifactaDownloadAccessSignature": "sr=c&si=trifacta-deploy-public-read&sig=ksMPhDkLpJYPEXnRNp4vAdo6QQ9ulpP%2BM4Gsi/nea%2Bg%3D&sv=2016-05-31",    
     "storageAccountName": "[concat(uniquestring(resourceGroup().id), 'salinuxvm')]",
     "imagePublisher": "Canonical",
     "imageOffer": "UbuntuServer",
@@ -190,7 +243,22 @@
       ],
       "properties": {
         "hardwareProfile": {
-          "vmSize": "[variables('vmSize')]"
+          "vmSize": "[variables('vmSize')]",
+          "installScriptActions": [
+          {
+            "name": "[concat('trifacta-', variables('trifactaVersionShort'), '-', variables('armTemplateVersion'), '-', uniquestring(parameters('TrifactaApplicationName')))]",
+            "uri": "[concat(variables('baseUri'), '/bin/deploy.sh')]",
+            "parameters": "[concat('-v \"', parameters('TrifactaVersion'), '\" -B \"', variables('branch'), '\" -s \"', variables('trifactaDownloadAccessSignature'), '\" -d \"', parameters('DirectoryID'), '\" -a \"', parameters('ApplicationID'), '\" -S \"', parameters('Secret'), '\" -K \"', parameters('KeyVaultUrl'), '\" -t \"', parameters('SasToken'), '\" -da \"', parameters('Databricks_URL'), '\"')]"
+          }
+        ],
+        "uninstallScriptActions": [
+          {
+            "name": "[concat('trifacta-uninstall-', variables('trifactaVersionShort'), '-', variables('armTemplateVersion'), '-', uniquestring(parameters('TrifactaApplicationName')))]",
+            "uri": "[concat(variables('baseUri'), '/bin/uninstall.sh')]"
+          }
+        ],
+        "applicationType": "CustomApplication"
+       }
         },
         "osProfile": {
           "computerName": "[variables('vmName')]",
@@ -233,6 +301,10 @@
     }
   ],
   "outputs": {
+    "application": {
+      "type": "object",
+      "value": "[reference(resourceId('Microsoft.Compute/virtualMachines', variables('vmName')))]"
+    },
     "hostname": {
       "type": "string",
       "value": "[reference(variables('publicIPAddressName')).dnsSettings.fqdn]"
