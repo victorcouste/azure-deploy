@@ -33,14 +33,12 @@
         "description": "SSH Key or password for the Virtual Machine. SSH key is recommended."
       }
     },
-
     "dnsLabelPrefix": {
       "type": "string",
       "metadata": {
         "description": "Unique DNS Name for the Public IP used to access the Virtual Machine."
       }
     },
-
     "ubuntuOSVersion": {
       "type": "string",
       "defaultValue": "16.04.0-LTS",
@@ -96,7 +94,55 @@
       },
       "defaultValue": "trifacta"
     },
-    
+    "DirectoryID": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure Active Directory directory ID for the registered application. Required."
+      },
+      "defaultValue": "<AAD_DIRECTORY_ID>"
+    },
+    "ApplicationID": {
+      "type": "string",
+      "metadata": {
+        "description": "Registered application's ID. Required."
+      },
+      "defaultValue": "<APPLICATION_ID>"
+    },
+    "Secret": {
+      "type": "secureString",
+      "metadata": {
+        "description": "Registered application's key. Required."
+      },
+      "defaultValue": "<APPLICATION_SECRET>"
+    },
+    "KeyVaultUrl": {
+      "type": "string",
+      "metadata": {
+        "description": "Key Vault URL. Required for Azure Data Lake Store access."
+      },
+      "defaultValue": "https://KEY_VAULT_NAME.vault.azure.net/"
+    },
+    "SasToken": {
+      "type": "string",
+      "metadata": {
+        "description": "Shared Access Signature token. Required for Blob Storage access."
+      },
+      "defaultValue": "<WASB_SAS_TOKEN>"
+    },
+    "Databricks_URL": {
+      "type": "string",
+      "metadata": {
+        "description": "Databricks Service URL. Required for Spark processing in Databricks cluster."
+      },
+      "defaultValue": "https://REGION.azuredatabricks.net"
+    },
+    "ADLS Store": {
+      "type": "string",
+      "metadata": {
+        "description": "Aazure ADLS store name."
+      },
+      "defaultValue": "<ADLS_STORE>"
+    }
 
   },
 
@@ -105,34 +151,7 @@
     "branch": "master",
     "baseUri": "[concat('https://raw.githubusercontent.com/victorcouste/azure-deploy/', variables('branch'))]",
     "armTemplateVersion": "1",
-    "trifactaDownloadAccessSignature": "sr=c&si=trifacta-deploy-public-read&sig=ksMPhDkLpJYPEXnRNp4vAdo6QQ9ulpP%2BM4Gsi/nea%2Bg%3D&sv=2016-05-31",
-  
-    "storageAccountName": "[concat(uniquestring(resourceGroup().id), 'salinuxvm')]",
-    "imagePublisher": "Canonical",
-    "imageOffer": "UbuntuServer",
-    "nicName": "[parameters('applicationName')]",
-    "addressPrefix": "10.0.0.0/16",
-    "subnetName": "Subnet",
-    "subnetPrefix": "10.0.0.0/24",
-    "storageAccountType": "Standard_LRS",
-    "publicIPAddressName": "myPublicIP",
-    "publicIPAddressType": "Dynamic",
-    "vmSize": "[parameters('TrifactaServerSize')]",
-    "virtualNetworkName": "MyVNET",
-    "linuxConfiguration": {
-      "disablePasswordAuthentication": true,
-      "ssh": {
-        "publicKeys": [
-          {
-            "path": "[concat('/home/', parameters('adminUsername'), '/.ssh/authorized_keys')]",
-            "keyData": "[parameters('adminPasswordOrKey')]"
-          }
-        ]
-      }
-    },
-    "subnetRef": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('virtualNetworkName'), variables('subnetName'))]"
-  
-
+    "trifactaDownloadAccessSignature": "sr=c&si=trifacta-deploy-public-read&sig=ksMPhDkLpJYPEXnRNp4vAdo6QQ9ulpP%2BM4Gsi/nea%2Bg%3D&sv=2016-05-31"
   },
   "resources": [
     {
@@ -148,83 +167,10 @@
         }
       }
     },
-
-  {
-      "type": "Microsoft.Storage/storageAccounts",
-      "apiVersion": "2018-11-01",
-      "name": "[variables('storageAccountName')]",
-      "location": "[parameters('location')]",
-      "sku": {
-        "name": "[variables('storageAccountType')]"
-      },
-      "kind": "Storage",
-      "properties": {}
-    },
-    {
-      "type": "Microsoft.Network/publicIPAddresses",
-      "apiVersion": "2018-11-01",
-      "name": "[variables('publicIPAddressName')]",
-      "location": "[parameters('location')]",
-      "properties": {
-        "publicIPAllocationMethod": "[variables('publicIPAddressType')]",
-        "dnsSettings": {
-          "domainNameLabel": "[parameters('dnsLabelPrefix')]"
-        }
-      }
-    },
-    {
-      "type": "Microsoft.Network/virtualNetworks",
-      "apiVersion": "2018-11-01",
-      "name": "[variables('virtualNetworkName')]",
-      "location": "[parameters('location')]",
-      "properties": {
-        "addressSpace": {
-          "addressPrefixes": [
-            "[variables('addressPrefix')]"
-          ]
-        },
-        "subnets": [
-          {
-            "name": "[variables('subnetName')]",
-            "properties": {
-              "addressPrefix": "[variables('subnetPrefix')]"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "type": "Microsoft.Network/networkInterfaces",
-      "apiVersion": "2018-11-01",
-      "name": "[variables('nicName')]",
-      "location": "[parameters('location')]",
-      "dependsOn": [
-        "[resourceId('Microsoft.Network/publicIPAddresses/', variables('publicIPAddressName'))]",
-        "[resourceId('Microsoft.Network/virtualNetworks/', variables('virtualNetworkName'))]"
-      ],
-      "properties": {
-        "ipConfigurations": [
-          {
-            "name": "ipconfig1",
-            "properties": {
-              "privateIPAllocationMethod": "Dynamic",
-              "publicIPAddress": {
-                "id": "[resourceId('Microsoft.Network/publicIPAddresses',variables('publicIPAddressName'))]"
-              },
-              "subnet": {
-                "id": "[variables('subnetRef')]"
-              }
-            }
-          }
-        ]
-      }
-    },
-
     {
       "name": "[parameters('applicationName')]",
       "type": "Microsoft.Compute/virtualMachines",
       "apiVersion": "2019-03-01",
-      "location": "[parameters('location')]",
       "properties": {
         "installScriptActions": [
           {
@@ -246,10 +192,12 @@
   ],
   "outputs": {
 
+  }
     "application": {
       "type": "object",
       "value": "[reference(resourceId('Microsoft.Compute/virtualMachines', parameters('applicationName')))]"
-    },
+    }
+  "outputs": {
     "hostname": {
       "type": "string",
       "value": "[reference(variables('publicIPAddressName')).dnsSettings.fqdn]"
@@ -258,8 +206,7 @@
       "type": "string",
       "value": "[concat('ssh ', parameters('adminUsername'), '@', reference(variables('publicIPAddressName')).dnsSettings.fqdn)]"
     }
-
   }
-
+  
 }
 
