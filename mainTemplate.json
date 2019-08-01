@@ -129,12 +129,7 @@
     }
   },
   "variables": {
-    "trifactaVersionShort": "[replace(parameters('TrifactaVersion'), '.', '')]",
-    "branch": "master",
-    "baseUri": "[concat('https://raw.githubusercontent.com/victorcouste/azure-deploy/', variables('branch'))]",
-    "armTemplateVersion": "1",
-    "trifactaDownloadAccessSignature": "sr=c&si=trifacta-deploy-public-read&sig=ksMPhDkLpJYPEXnRNp4vAdo6QQ9ulpP%2BM4Gsi/nea%2Bg%3D&sv=2016-05-31",    
-    "storageAccountName": "[concat(uniquestring(resourceGroup().id), 'salinuxvm')]",
+   "storageAccountName": "[concat(uniquestring(resourceGroup().id), 'salinuxvm')]",
     "imagePublisher": "Canonical",
     "imageOffer": "UbuntuServer",
     "nicName": "[parameters('TrifactaApplicationName')]",
