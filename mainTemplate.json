@@ -258,7 +258,6 @@
             "uri": "[concat(variables('baseUri'), '/bin/uninstall.sh')]"
           }
         ],
-        "applicationType": "CustomApplication",
         "osProfile": {
           "computerName": "[variables('vmName')]",
           "adminUsername": "[parameters('adminUsername')]",
