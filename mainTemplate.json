@@ -2,14 +2,6 @@
   "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "galleryPackageIdentity": {
-      "type": "string",
-      "metadata": {
-        "description": "Identity of the gallery package for the application.",
-        "trifactaComment": "Do not change this key."
-      },
-      "defaultValue": "wrangler-enterprise"
-    },
     "adminUsername": {
       "type": "string",
       "metadata": {
@@ -33,14 +25,12 @@
         "description": "SSH Key or password for the Virtual Machine. SSH key is recommended."
       }
     },
-
     "dnsLabelPrefix": {
       "type": "string",
       "metadata": {
         "description": "Unique DNS Name for the Public IP used to access the Virtual Machine."
       }
     },
-
     "ubuntuOSVersion": {
       "type": "string",
       "defaultValue": "16.04.0-LTS",
@@ -99,14 +89,12 @@
     
 
   },
-
   "variables": {
     "trifactaVersionShort": "[replace(parameters('trifactaVersion'), '.', '')]",
     "branch": "master",
     "baseUri": "[concat('https://raw.githubusercontent.com/victorcouste/azure-deploy/', variables('branch'))]",
     "armTemplateVersion": "1",
     "trifactaDownloadAccessSignature": "sr=c&si=trifacta-deploy-public-read&sig=ksMPhDkLpJYPEXnRNp4vAdo6QQ9ulpP%2BM4Gsi/nea%2Bg%3D&sv=2016-05-31",
-  
     "storageAccountName": "[concat(uniquestring(resourceGroup().id), 'salinuxvm')]",
     "imagePublisher": "Canonical",
     "imageOffer": "UbuntuServer",
@@ -131,8 +119,6 @@
       }
     },
     "subnetRef": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('virtualNetworkName'), variables('subnetName'))]"
-  
-
   },
   "resources": [
     {
@@ -148,8 +134,7 @@
         }
       }
     },
-
-  {
+   {
       "type": "Microsoft.Storage/storageAccounts",
       "apiVersion": "2018-11-01",
       "name": "[variables('storageAccountName')]",
@@ -219,7 +204,6 @@
         ]
       }
     },
-
     {
       "name": "[parameters('applicationName')]",
       "type": "Microsoft.Compute/virtualMachines",
@@ -245,7 +229,6 @@
     }
   ],
   "outputs": {
-
     "application": {
       "type": "object",
       "value": "[reference(resourceId('Microsoft.Compute/virtualMachines', parameters('applicationName')))]"
@@ -258,8 +241,6 @@
       "type": "string",
       "value": "[concat('ssh ', parameters('adminUsername'), '@', reference(variables('publicIPAddressName')).dnsSettings.fqdn)]"
     }
-
   }
-
 }
 
