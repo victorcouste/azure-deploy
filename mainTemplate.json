@@ -244,20 +244,7 @@
       "properties": {
         "hardwareProfile": {
           "vmSize": "[variables('vmSize')]",
-        },  
-          "installScriptActions": [
-          {
-            "name": "[concat('trifacta-', variables('trifactaVersionShort'), '-', variables('armTemplateVersion'), '-', uniquestring(parameters('TrifactaApplicationName')))]",
-            "uri": "[concat(variables('baseUri'), '/bin/deploy.sh')]",
-            "parameters": "[concat('-v \"', parameters('TrifactaVersion'), '\" -B \"', variables('branch'), '\" -s \"', variables('trifactaDownloadAccessSignature'), '\" -d \"', parameters('DirectoryID'), '\" -a \"', parameters('ApplicationID'), '\" -S \"', parameters('Secret'), '\" -K \"', parameters('KeyVaultUrl'), '\" -t \"', parameters('SasToken'), '\" -da \"', parameters('Databricks_URL'), '\"')]"
-          }
-        ],
-        "uninstallScriptActions": [
-          {
-            "name": "[concat('trifacta-uninstall-', variables('trifactaVersionShort'), '-', variables('armTemplateVersion'), '-', uniquestring(parameters('TrifactaApplicationName')))]",
-            "uri": "[concat(variables('baseUri'), '/bin/uninstall.sh')]"
-          }
-        ],
+        },
         "osProfile": {
           "computerName": "[variables('vmName')]",
           "adminUsername": "[parameters('adminUsername')]",
