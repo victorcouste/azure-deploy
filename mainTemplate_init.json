@@ -192,11 +192,10 @@
   ],
   "outputs": {
 
-  }
     "application": {
       "type": "object",
       "value": "[reference(resourceId('Microsoft.Compute/virtualMachines', parameters('applicationName')))]"
-    }
+    },
   "outputs": {
     "hostname": {
       "type": "string",
