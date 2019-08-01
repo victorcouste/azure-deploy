@@ -286,10 +286,6 @@
     }
   ],
   "outputs": {
-    "application": {
-      "type": "object",
-      "value": "[reference(resourceId('Microsoft.Compute/virtualMachines', variables('vmName')))]"
-    },
     "hostname": {
       "type": "string",
       "value": "[reference(variables('publicIPAddressName')).dnsSettings.fqdn]"
