@@ -244,6 +244,7 @@
       "properties": {
         "hardwareProfile": {
           "vmSize": "[variables('vmSize')]",
+        },  
           "installScriptActions": [
           {
             "name": "[concat('trifacta-', variables('trifactaVersionShort'), '-', variables('armTemplateVersion'), '-', uniquestring(parameters('TrifactaApplicationName')))]",
@@ -257,9 +258,7 @@
             "uri": "[concat(variables('baseUri'), '/bin/uninstall.sh')]"
           }
         ],
-        "applicationType": "CustomApplication"
-       }
-        },
+        "applicationType": "CustomApplication",
         "osProfile": {
           "computerName": "[variables('vmName')]",
           "adminUsername": "[parameters('adminUsername')]",
@@ -298,6 +297,7 @@
           }
         }
       }
+    }
   ],
   "outputs": {
     "application": {
